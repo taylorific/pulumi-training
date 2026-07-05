@@ -2,7 +2,7 @@
 
 To start the slide show:
 
-```
+```bash
 docker run -it --rm \
   --mount type=bind,source="$(pwd)",target="/slidev" \
   --publish 3030:3030 \
