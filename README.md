@@ -1,4 +1,4 @@
-# KVM Training
+# Pulumi Training
 
 To start the slide show:
 
