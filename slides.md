@@ -58,17 +58,5 @@ routeAlias: toc
 <Toc columns="2"/>
 
 ---
-layout: section
+src: ./google-cloud/google-cloud-slides.md
 ---
-
-# Install and configure libvirt
-
-<br>
-<br>
-<Link to="toc" title="Table of Contents"/>
-
----
-hideInToc: true
----
-
-# Install Pulumi
