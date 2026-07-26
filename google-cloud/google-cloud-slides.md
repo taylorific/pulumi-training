@@ -51,6 +51,265 @@ The preview of the Google Native provider has highlighted a number of challenges
 https://github.com/pulumi/pulumi/discussions/12470
 
 ---
+
+# Google Cloud Organization Setup
+
+Choosing between **Cloud Identity** and **Google Workspace**
+
+---
+layout: section
+
+# Why an Organization?
+
+---
+
+# What is a Google Cloud Organization?
+
+An Organization is the **root resource** in Google Cloud.
+
+Everything lives underneath it.
+
+```text
+Organization
+│
+├── Folders (optional)
+│   ├── Engineering
+│   ├── Production
+│   └── Development
+│
+└── Projects
+    ├── dev-network
+    ├── production
+    └── shared-services
+```
+
+Benefits:
+
+- Centralized IAM
+- Billing management
+- Organization Policies
+- Shared VPC
+- Centralized logging
+- Service Accounts
+
+---
+
+# What Creates an Organization?
+
+A Google Cloud Organization is created when you verify ownership of a domain through:
+
+- Google Workspace
+- Cloud Identity
+
+Example:
+
+```
+example.com
+```
+
+becomes
+
+```
+Organization
+Display Name: example.com
+```
+
+---
+
+layout: section
+
+# Identity Options
+
+---
+
+# Two Ways to Get an Organization
+
+| Cloud Identity | Google Workspace |
+|----------------|------------------|
+| Identity only | Identity + Productivity |
+| Free edition available | Paid subscription |
+| Google Cloud IAM | Google Cloud IAM |
+| No Gmail | Gmail included |
+| No Drive | Drive included |
+| No Docs | Docs included |
+
+Both create the exact same Google Cloud Organization.
+
+---
+
+# Cloud Identity
+
+Cloud Identity provides:
+
+- Users
+- Groups
+- MFA
+- SSO
+- Directory
+- Google Cloud IAM
+
+Users can:
+
+- Login to Google Cloud Console
+- Use gcloud
+- Run Terraform/Pulumi
+- Access APIs
+
+Users **cannot**:
+
+- Send Gmail
+- Use Google Docs
+- Use Drive
+- Use Calendar
+
+---
+
+# Google Workspace
+
+Workspace includes everything in Cloud Identity plus:
+
+- Gmail
+- Drive
+- Docs
+- Sheets
+- Calendar
+- Meet
+- Chat
+
+Think of Workspace as:
+
+```
+Google Workspace
+    =
+Cloud Identity
+    +
+Google Productivity Apps
+```
+
+---
+
+# Comparison
+
+| Feature | Cloud Identity | Workspace |
+|----------|---------------|-----------|
+| Google Cloud Console | ✅ | ✅ |
+| IAM | ✅ | ✅ |
+| Groups | ✅ | ✅ |
+| MFA | ✅ | ✅ |
+| Gmail | ❌ | ✅ |
+| Drive | ❌ | ✅ |
+| Calendar | ❌ | ✅ |
+| Docs | ❌ | ✅ |
+
+---
+
+layout: section
+
+# Which Should I Choose?
+
+---
+
+# Cloud Identity Free
+
+Good choice when:
+
+- You only need Google Cloud
+- Your company already uses Microsoft 365
+- You don't want Gmail
+- You only need identities
+
+Typical users:
+
+```
+admin@example.com
+developer@example.com
+contractor@example.com
+```
+
+---
+
+# Google Workspace
+
+Best choice when:
+
+- Company email is Gmail
+- You use Google Docs
+- You use Google Meet
+- You use Google Calendar
+
+The identity system is exactly the same as Cloud Identity.
+
+---
+
+# Common Misconception
+
+Many people see:
+
+```
+Cloud Identity
+$7.20/user/month
+```
+
+This is **Cloud Identity Premium**.
+
+There are actually two editions:
+
+| Edition | Cost |
+|----------|------|
+| Cloud Identity Free | Free |
+| Cloud Identity Premium | Paid |
+
+Premium adds enterprise identity features.
+
+Google Cloud does **not** require Premium.
+
+---
+
+layout: section
+
+# Users vs Service Accounts
+
+---
+
+# Human Users
+
+Human administrators belong to your identity provider.
+
+Examples:
+
+```
+alice@example.com
+bob@example.com
+admin@example.com
+```
+
+These users:
+
+- Login to the Cloud Console
+- Use gcloud auth login
+- Receive IAM roles
+
+---
+
+# Service Accounts
+
+Service Accounts are **not** Cloud Identity users.
+
+Example:
+
+```
+pulumi@example-project.iam.gserviceaccount.com
+```
+
+Characteristics:
+
+- Cannot login interactively
+- No Gmail
+- No password
+- Used by automation
+- Managed entirely by IAM
+
+---
 hideInToc: true
 ---
 
