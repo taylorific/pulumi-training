@@ -313,6 +313,60 @@ Characteristics:
 hideInToc: true
 ---
 
+The cleanest Google Cloud bootstrap model is:
+1. Manually establish the trust root: organization, billing account, one human administrator, and one small bootstrap project.
+2. Create a Pulumi automation service account in that bootstrap project.
+3. Let your human account impersonate that service account using short-lived credentials.
+4. Use Pulumi to manage everything below that boundary: folders, projects, IAM, APIs, networking, logging, budgets, and workload service accounts.
+4. Move CI from human impersonation to Workload Identity Federation/OIDC, not downloaded service-account keys.
+
+One important update: Pulumi’s Google Cloud Native provider is currently marked deprecated, while the GCP Classic provider is actively maintained and documented as fully supported. Use @pulumi/gcp for a new bootstrap project rather than @pulumi/google-native, even though “native” initially sounds more preferable.
+
+---
+hideInToc: true
+---
+
+# The bootstrap boundary
+
+Some things necessarily exist before Pulumi can manage Google Cloud:
+
+```
+Google Workspace / Cloud Identity domain
+└── Google Cloud organization
+    ├── Cloud Billing account
+    ├── Human break-glass/admin identity
+    └── Bootstrap project
+        └── Pulumi automation service account
+```
+
+---
+hideInToc: true
+---
+
+# Recommended identity mode
+
+Use these identities:
+
+```
+human-admin@example.com
+    │
+    │ roles/iam.serviceAccountTokenCreator
+    ▼
+pulumi-bootstrap@bootstrap-project.iam.gserviceaccount.com
+    │
+    ├── creates folders and projects
+    ├── attaches billing
+    ├── configures IAM
+    ├── enables APIs
+    └── creates narrower deployment service accounts
+```
+
+Do not download a long-lived JSON service-account key. Google recommends short-lived service-account impersonation, and the Token Creator role is what permits a principal to generate those short-lived credentials. Audit logs can record both the impersonated service account and the identity that performed the impersonation.
+
+---
+hideInToc: true
+---
+
 # Login to Google Cloud and get your organization ID
 
 ```bash
@@ -334,27 +388,9 @@ ORG_ID=$(docker run --rm \
 hideInToc: true
 ---
 
-# Create the bootstrap project
+# Get the billing account
 
 ```bash
-# Need to make uniuqe
-SUFFIX=$(openssl rand -hex 2)
-PROJECT_ID=pulumi-bootstrap-${SUFFIX}
-docker run --rm \
-  --env PROJECT_ID \
-  --env ORG_ID \
-  --volumes-from gcloud-config \
-  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
-    gcloud projects create "$PROJECT_ID" \
-      --organization="$ORG_ID" \
-      --name="pulumi-bootstrap"
-```
-
----
-hideInToc: true
----
-
-```
 docker run --rm \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
@@ -371,30 +407,48 @@ BILLING_ACCOUNT=$(docker run --rm \
 hideInToc: true
 ---
 
-```
+# Create the bootstrap project
+
+```bash
+# Need to make uniuqe
+SUFFIX=$(openssl rand -hex 2)
+PROJECT_ID=pulumi-bootstrap-${SUFFIX}
 docker run --rm \
+  --env PROJECT_ID \
+  --env ORG_ID \
+  --volumes-from gcloud-config \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
+    gcloud projects create "$PROJECT_ID" \
+      --organization="$ORG_ID" \
+      --name="pulumi-bootstrap"
+# Attach billing
+docker run --rm \
+  --env PROJECT_ID \
+  --env BILLING_ACCOUNT \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
     gcloud billing projects link "$PROJECT_ID" \
-      --billing-account="$BILLING_ACCOUNT"
+      --billing-account="${BILLING_ACCOUNT}"
 ```
 
 ---
 hideInToc: true
 ---
 
-# Enable APIs
+# Enable the bootstrap APIs
 
 ```
 docker run --rm \
+  --env PROJECT_ID \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
     gcloud services enable \
-    cloudresourcemanager.googleapis.com \
-    iam.googleapis.com \
-    serviceusage.googleapis.com \
-    cloudbilling.googleapis.com \
-    --project "$PROJECT_ID"
+      cloudresourcemanager.googleapis.com \
+      iam.googleapis.com \
+      iamcredentials.googleapis.com \
+      serviceusage.googleapis.com \
+      cloudbilling.googleapis.com \
+      --project "$PROJECT_ID"
 ```
 
 ---
@@ -404,66 +458,120 @@ hideInToc: true
 # Create Pulumi Service Account
 
 ```
-SA_NAME="pulumi-admin"
+PULUMI_SERVICE_ACCOUNT_NAME="pulumi-admin"
 docker run --rm \
-  --env SA_NAME \
+  --env PULUMI_SERVICE_ACCOUNT_NAME \
+  --env PROJECT_ID \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
-    gcloud iam service-accounts create "$SA_NAME" \
-    --project "$PROJECT_ID" \
-    --display-name="Pulumi Admin"
+    gcloud iam service-accounts create "$PULUMI_SERVICE_ACCOUNT_NAME" \
+      --project "$PROJECT_ID" \
+      --display-name="Pulumi Admin"
 ```
 
 ---
 hideInToc: true
 ---
 
-# Grant Pulumi Service Account Org Level Permissions
+# Permit your human account to impersonate the service account
 
+Grant this on the service account itself, not broadly across the organization:
+
+```bash
+PULUMI_SERVICE_ACCOUNT="pulumi-admin@mycompany-bootstrap.iam.gserviceaccount.com"
+HUMAN_ADMIN="admin@example.com"
+docker run --rm \
+  --env PULUMI_SERVICE_ACCOUNT \
+  --env PROJECT_ID \
+  --env HUMAN_ADMIN \
+  --volumes-from gcloud-config \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
+    gcloud iam service-accounts add-iam-policy-binding "$PULUMI_SERVICE_ACCOUNT" \
+      --project "$PROJECT_ID" \
+      --member="user:$HUMAN_ADMIN" \
+      --role="roles/iam.serviceAccountTokenCreator"
 ```
-SA_NAME="pulumi-admin"
-SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+Granting Token Creator directly on the service account limits your human account to impersonating that particular identity.
+
+---
+hideInToc: true
+---
+
+```bash
 docker run --rm \
-  --env ORG_ID --env SA_EMAIL \
+  --env ORG_ID \
+  --env PULUMI_SERVICE_ACCOUNT \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
     gcloud organizations add-iam-policy-binding "$ORG_ID" \
-      --member="serviceAccount:${SA_EMAIL}" \
-      --role="roles/resourcemanager.organizationAdmin"
+      --member="serviceAccount:$PULUMI_SERVICE_ACCOUNT" \
+      --role="roles/resourcemanager.folderAdmin"
 
 docker run --rm \
-  --env ORG_ID --env SA_EMAIL \
+  --env ORG_ID \
+  --env PULUMI_SERVICE_ACCOUNT \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
     gcloud organizations add-iam-policy-binding "$ORG_ID" \
-      --member="serviceAccount:${SA_EMAIL}" \
+      --member="serviceAccount:$PULUMI_SERVICE_ACCOUNT" \
       --role="roles/resourcemanager.projectCreator"
 
 docker run --rm \
-  --env ORG_ID --env SA_EMAIL \
+  --env ORG_ID \
+  --env PULUMI_SERVICE_ACCOUNT \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
     gcloud organizations add-iam-policy-binding "$ORG_ID" \
-      --member="serviceAccount:${SA_EMAIL}" \
-      --role="roles/billing.user"
+      --member="serviceAccount:$PULUMI_SERVICE_ACCOUNT" \
+      --role="roles/resourcemanager.organizationViewer"
+
+docker run --rm \
+  --env ORG_ID \
+  --env PULUMI_SERVICE_ACCOUNT \
+  --volumes-from gcloud-config \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
+    gcloud organizations add-iam-policy-binding "$ORG_ID" \
+      --member="serviceAccount:$PULUMI_SERVICE_ACCOUNT" \
+      --role="roles/iam.organizationRoleAdmin"
+
+docker run --rm \
+  --env ORG_ID \
+  --env PULUMI_SERVICE_ACCOUNT \
+  --volumes-from gcloud-config \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
+    gcloud organizations add-iam-policy-binding "$ORG_ID" \
+      --member="serviceAccount:$PULUMI_SERVICE_ACCOUNT" \
+      --role="roles/orgpolicy.policyAdmin"
 ```
 
 ---
 hideInToc: true
 ---
 
-# Let human admin impersonate service account
+# Configure Application Default Credentials
 
-```
-HUMAN_EMAIL=alice@example.com
-docker run --rm \
-  --env PROJECT_ID --env HUMAN_EMAIL --env SA_EMAIL \
+For local Pulumi execution, create an ADC file that impersonates the service account:
+
+```bash
+docker run --rm -it \
+  --env PULUMI_SERVICE_ACCOUNT \
   --volumes-from gcloud-config \
   gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
-    gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
-      --project "$PROJECT_ID" \
-      --member="user:${HUMAN_EMAIL}" \
-      --role="roles/iam.serviceAccountTokenCreator"
+    gcloud auth application-default login \
+      --impersonate-service-account="$PULUMI_SERVICE_ACCOUNT"
+```
+
+Google officially supports creating an ADC file backed by service-account impersonation. Pulumi then obtains short-lived credentials through ADC rather than reading a downloaded key.
+
+Verify it:
+
+```bash
+docker run --rm \
+  --volumes-from gcloud-config \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:stable \
+    gcloud auth application-default print-access-token >/dev/null &&
+    echo "ADC impersonation works"
 ```
 
 ---
